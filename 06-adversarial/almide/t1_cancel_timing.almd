@@ -1,0 +1,30 @@
+// 意地悪1: err が出たとき、5秒スリープ中の兄弟は本当にキャンセルされるのか
+import env
+
+effect fn boom() -> Result[Int, String] = {
+  env.sleep_ms(50)
+  err("boom")
+}
+
+effect fn slow() -> Result[Int, String] = {
+  env.sleep_ms(5000)
+  println("SLOW COMPLETED ANYWAY")
+  ok(1)
+}
+
+effect fn run() -> Result[Unit, String] = {
+  let (a, b) = fan {
+    boom()
+    slow()
+  }
+  println("unreachable ${int.to_string(a)} ${int.to_string(b)}")
+  ok(())
+}
+
+effect fn main() -> Unit = {
+  match run() {
+    ok(_) => println("fan ok"),
+    err(e) => println("fan failed: ${e}"),
+  }
+  println("main exiting")
+}

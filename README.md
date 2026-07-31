@@ -28,6 +28,7 @@ almide run 01-generic-methods/main.almd
 | [03](03-uuid/) | `uuid` パッケージが stdlib 入り | 存在しないので 20 行で自作 |
 | [04](04-stdlib-bits/) | `strings.CutLast` / `Rand.N` / `URL.Clone` | `last_index_of` + slice / `random.int` / record spread |
 | [05](05-concurrency/) | `goroutineleak` プロファイル | `fan` 構造化並行 |
+| [06](06-adversarial/) | 意地悪テスト: キャンセルは本物か（両言語に同じ攻撃） | 〃 |
 
 ## 01 — ジェネリックメソッド
 
@@ -289,9 +290,22 @@ effect fn main() -> Unit = {
 }
 ```
 
-### 意地悪テスト: 「キャンセル」は本物か
+Go は「リークは起きるもの」として観測手段を整備し、almide は「リークを構文で封じる」——と、SPEC は言っている。本当かどうかは次のセクションで攻撃する。
 
-SPEC の「first error cancels all siblings」を almide 0.41.0 の実バイナリで攻撃してみた結果:
+## 06 — 意地悪テスト: キャンセルは本物か
+
+05 の「野良タスクが構造上作れないのでリーク検出器が要らない」という主張を、**両言語の実バイナリに同じ攻撃をぶつけて**検証した。
+攻撃は 3 つ: ① err が出たときスリープ中の兄弟を止められるか、② race の敗者はどうなるか、③ 終わらないタスクを抱えたら何が起きるか。
+
+```bash
+go run ./06-adversarial                             # Go 側 3 連発 (約 10 秒)
+almide run 06-adversarial/almide/t1_cancel_timing.almd
+almide run 06-adversarial/almide/t3b_unkillable.almd   # 注意: 仕様どおり永久ハングする。Ctrl-C で脱出
+```
+
+### almide (0.41.0)
+
+SPEC の「first error cancels all siblings」に対する実測:
 
 | 実験 | 期待（SPEC） | 実測 |
 |---|---|---|
@@ -307,7 +321,63 @@ SPEC の「first error cancels all siblings」を almide 0.41.0 の実バイナ�
 - 「err なら兄弟をキャンセル」は**現状は未実装** — キャンセルではなく join（完走待ち）。
 - その帰結として、**終わらないタスクは fan ごと道連れにする**。Go で goroutine リークになる事故は、almide では「ハング」に変換される — そしてハングの検出器はまだない。
 
-Go は「リークは起きるもの」として観測手段を整備し、almide は「リークを構造で禁じた」結果、同じ事故が別の形で現れる。
+この検証は issue として起票済み: [almide/almide#1023](https://github.com/almide/almide/issues/1023)（キャンセル未実装）、[almide/almide#1024](https://github.com/almide/almide/issues/1024)（race がレースしていない）。
+
+### Go 1.27
+
+同じ攻撃を Go にぶつける（[06-adversarial/main.go](06-adversarial/main.go)）。Go のキャンセルも context 経由の**協調式**である、というのがポイント。
+
+```go
+// 意地悪1: time.Sleep は ctx を見ない (almide の env.sleep_ms と同じ立場)
+wg.Go(func() {
+	time.Sleep(5 * time.Second)
+	fmt.Println("SLOW COMPLETED ANYWAY (ctx 無視版)")
+})
+// ctx を見るように書いた兄弟だけが救われる
+wg.Go(func() {
+	select {
+	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
+		fmt.Println("ctx 対応版: cancelled")
+	}
+})
+
+// 意地悪2: select は本物のレース。ただし敗者 (unbuffered 送信) は放置される
+res := make(chan string)
+go func() { time.Sleep(2 * time.Second); res <- "slow" }() // 誰も受信しない
+go func() { time.Sleep(10 * time.Millisecond); res <- "fast" }()
+winner := <-res
+```
+
+実測出力（抜粋）:
+
+```
+意地悪1: boom: err @ 51ms / ctx 対応版: cancelled @ 51ms
+         SLOW COMPLETED ANYWAY @ 5.001s (ctx 無視版)
+         Wait() 完了 @ 5.001s — 全員の完走を待つのは almide と同じ
+意地悪2: winner: fast @ 11ms — select は本物のレース
+         goroutineleak profile: total 1   ← 敗者がリークとして観測される
+意地悪3: Wait() は 2 秒待っても返らない — almide の fan なら、ここで永久ハング
+         ただし Go は Wait を諦めて先へ進める(=リークとして抱えたまま生きる)自由がある
+```
+
+### 対称比較
+
+| 攻撃 | Go 1.27 | almide 0.41 |
+|---|---|---|
+| err + スリープ中の兄弟 | ctx を見ないタスクは**完走**（協調式）。ctx 対応に書けば 51ms で止まる | キャンセル手段が存在せず**完走** |
+| race | **本物の先着勝ち**（11ms）。敗者はリークし、`goroutineleak` が検出 | 先頭決定論で**レースしていない**。敗者はスコープから漏れない |
+| 終わらないタスク | Wait は返らないが、**見捨てて先へ進める**（結果はリーク） | 見捨てる手段がなく **fan ごとハング** |
+
+### 結論
+
+**どちらの言語も、協調しないタスクは殺せない。** キャンセルが協調式である点は完全に同じで、違いは事故の現れ方だけ:
+
+- Go: 事故は「リーク」になる。プログラムは先へ進めるが野良 goroutine が溜まる — だから 1.27 で `goroutineleak` 検出器が入った。
+- almide: 事故は「ハング」になる。タスクは漏れないが fan ごと止まる — そして検出器はない。
+- race だけは Go の勝ち。`select` は本当に先着で勝負が決まる。
+- おまけの死角: sleep ループの goroutine は「ブロック」ではないので `goroutineleak` にも映らない。観測にも限界がある。
+
 20 年近い後方互換を背負う言語と、2026 年に設計された言語（の、仕様と実装のギャップ）の対比がいちばん出るところ。
 
 ## まとめ

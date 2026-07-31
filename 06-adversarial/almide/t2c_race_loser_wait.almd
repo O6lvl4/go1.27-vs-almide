@@ -1,0 +1,28 @@
+// 意地悪2c: race の勝者確定後、main が 3 秒生き延びたら敗者(2秒スリープ)は蘇るのか。
+// 蘇って println したら、敗者は「キャンセル」ではなく「放置」= 野良タスク。
+import env
+
+effect fn fast() -> Result[String, String] = {
+  env.sleep_ms(10)
+  ok("fast won")
+}
+
+effect fn slow_noisy() -> Result[String, String] = {
+  env.sleep_ms(2000)
+  println("LOSER STILL RUNNING AFTER RACE")
+  ok("slow")
+}
+
+effect fn main() -> Unit = {
+  let winner = fan.race([
+    () => fast(),
+    () => slow_noisy()
+  ])
+  match winner {
+    ok(w) => println("winner: ${w}"),
+    err(e) => println("race err: ${e}"),
+  }
+  println("main stays alive 3s...")
+  env.sleep_ms(3000)
+  println("main exiting")
+}

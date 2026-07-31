@@ -1,0 +1,16 @@
+// 意地悪0: fan は本当に並行なのか。1秒スリープ x3 が ~1秒で終わるか ~3秒かかるか。
+import env
+
+effect fn nap(name: String) -> Result[String, String] = {
+  env.sleep_ms(1000)
+  ok(name)
+}
+
+effect fn main() -> Unit = {
+  let (a, b, c) = fan {
+    nap("A")
+    nap("B")
+    nap("C")
+  }
+  println("${a} ${b} ${c}")
+}

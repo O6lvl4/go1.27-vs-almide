@@ -1,0 +1,31 @@
+// 意地悪3b: 最適化で消せない無限ループ(sleep = syscall 入り)。
+// 兄弟が即 err のとき、fan はこのタスクを本当に「キャンセル」できるのか。
+import env
+
+effect fn boom() -> Result[Int, String] = err("boom")
+
+effect fn immortal() -> Result[Int, String] = {
+  var i = 0
+  while i >= 0 {
+    env.sleep_ms(100)
+    i = i + 1
+  }
+  ok(i)
+}
+
+effect fn run() -> Result[Unit, String] = {
+  let (a, b) = fan {
+    boom()
+    immortal()
+  }
+  println("unreachable ${int.to_string(a)} ${int.to_string(b)}")
+  ok(())
+}
+
+effect fn main() -> Unit = {
+  match run() {
+    ok(_) => println("fan ok"),
+    err(e) => println("fan failed: ${e}"),
+  }
+  println("main exiting")
+}

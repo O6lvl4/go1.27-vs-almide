@@ -1,0 +1,24 @@
+// 意地悪2b: 遅い方をリスト先頭に置く。「first to complete wins」なら 10ms で返るはず。
+// 「thunk[0] の結果を待つ」実装なら 2 秒かかる。
+import env
+
+effect fn fast() -> Result[String, String] = {
+  env.sleep_ms(10)
+  ok("fast won")
+}
+
+effect fn slow() -> Result[String, String] = {
+  env.sleep_ms(2000)
+  ok("slow won")
+}
+
+effect fn main() -> Unit = {
+  let winner = fan.race([
+    () => slow(),
+    () => fast()
+  ])
+  match winner {
+    ok(w) => println("winner: ${w}"),
+    err(e) => println("race err: ${e}"),
+  }
+}
