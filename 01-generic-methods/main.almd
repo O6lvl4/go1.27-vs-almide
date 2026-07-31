@@ -1,0 +1,33 @@
+// Go 1.27 のジェネリックメソッドに相当するもの。
+//
+// almide の慣習メソッド (fn Type.method) はジェネリック型には未対応だが、
+// そもそも「型の名前空間にジェネリック関数を置きたい」という動機自体が
+// UFCS で解消されている: 第1引数の型が合う自由関数は s.map_each(f) と呼べる。
+// stdlib の list.map[A, B] も同じ仕組みで xs.map(f) と呼ばれている。
+
+type Stack[T] = { items: List[T] }
+
+fn stack_new[T]() -> Stack[T] = { items: [] }
+
+fn push[T](s: Stack[T], v: T) -> Stack[T] =
+  { items: list.insert(s.items, list.len(s.items), v) }
+
+// Go 1.27 の func (s *Stack[T]) Map[U any](f func(T) U) に相当
+fn map_each[T, U](s: Stack[T], f: fn(T) -> U) -> Stack[U] =
+  { items: list.map(s.items, f) }
+
+fn fold_all[T, A](s: Stack[T], init: A, f: fn(A, T) -> A) -> A =
+  list.fold(s.items, init, f)
+
+fn main() -> Unit = {
+  // 明示的な型引数は Go と同じく [] で渡せる (stack_new[Int]())
+  let s = stack_new[Int]().push(1).push(2).push(3)
+
+  // 型引数はラムダから推論される
+  let labels = s.map_each((v) => "<${int.to_string(v)}>")
+  println(list.join(labels.items, " "))
+
+  let joined = labels.fold_all("", (acc, v) =>
+    if string.len(acc) == 0 then v else acc + "-" + v)
+  println(joined)
+}

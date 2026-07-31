@@ -1,0 +1,35 @@
+// Go 1.27 は uuid が標準ライブラリ入り。almide には uuid がない(stdlib にも姉妹パッケージにも)。
+// ので、RFC 9562 の UUID v4 をその場で実装してみる。
+//
+// 注意: almide の random は seed 指定も CSPRNG もない最小 API (effect fn)。
+// Go の uuid が「暗号学的に安全な乱数源」を明記しているのとは対照的。
+
+import random
+
+fn to_hex2(n: Int) -> String = string.pad_start(int.to_hex(n), 2, "0")
+
+effect fn uuid_v4() -> String = {
+  var bs: List[Int] = []
+  for _ in 0..<16 {
+    bs.push(random.int(0, 255))
+  }
+  // version 4 (上位ニブルを 0100 に)、variant 10xx
+  let b6 = int.bor(int.band(list.get_or(bs, 6, 0), 15), 64)
+  let b8 = int.bor(int.band(list.get_or(bs, 8, 0), 63), 128)
+  let fixed = list.set(list.set(bs, 6, b6), 8, b8)
+  let hx = list.join(list.map(fixed, (b) => to_hex2(b)), "")
+  string.slice(hx, 0, 8) + "-" +
+    string.slice(hx, 8, 12) + "-" +
+    string.slice(hx, 12, 16) + "-" +
+    string.slice(hx, 16, 20) + "-" +
+    string.slice(hx, 20, 32)
+}
+
+effect fn main() -> Unit = {
+  // effect fn の呼び出しは暗黙に Result になる(効果は失敗しうる)ので ?? で剥がす
+  for _ in 0..<3 {
+    println(uuid_v4() ?? "")
+  }
+  // V7 (時刻順ソート可能) は unix ミリ秒が要る。datetime.now() -> Int はあるが
+  // ミリ秒精度の保証が API に現れていないので今日は見送り
+}

@@ -1,0 +1,30 @@
+// Go 1.27 stdlib 小ネタの almide 対応。
+//
+// - strings.CutLast : ないので last_index_of + slice で 5 行
+// - rand/v2 Rand.N  : random.int(min, max)。ただし Int のみ・seed なし
+// - net/url URL.Clone: record が immutable なので clone は spread 構文がタダでくれる
+
+import random
+
+fn cut_last(s: String, sep: String) -> (String, String, Bool) =
+  match string.last_index_of(s, sep) {
+    some(i) => (string.slice(s, 0, i), string.drop(s, i + string.len(sep)), true),
+    none => (s, "", false),
+  }
+
+type Url = { host: String, path: String, query: String }
+
+fn to_string(u: Url) -> String = "https://${u.host}${u.path}?${u.query}"
+
+effect fn main() -> Unit = {
+  let (dir, file, _) = cut_last("archive/2026/photo.tar.gz", "/")
+  let (base, ext, _) = cut_last(file, ".")
+  println("${dir} | ${base} | ${ext}")
+
+  println(int.to_string(random.int(0, 9)))
+
+  let u = Url { host: "miyazaki-go.connpass.com", path: "/event/12345/", query: "tab=1" }
+  let v = { ...u, query: "tab=2" }
+  println(u.to_string())
+  println(v.to_string())
+}

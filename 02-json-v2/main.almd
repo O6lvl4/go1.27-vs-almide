@@ -1,0 +1,37 @@
+// Go 1.27 の encoding/json/v2 に相当するもの。
+//
+// Go v2 は struct タグ + Options 引数で挙動を調整する。
+// almide は Codec プロトコルを付けるだけで encode/decode が導出され、
+// decode は最初から Result を返す(=失敗が型に現れる)。
+
+import json
+
+type Event: Codec = {
+  name: String,
+  held: String,
+  venue: String,
+}
+
+fn main() -> Unit = {
+  let ev = Event {
+    name: "Miyazaki.go Go v1.27rc Sneak Peek #5",
+    held: "2026-07-31T19:00:00+09:00",
+    venue: "360 Coworking",
+  }
+  println(json.stringify_pretty(ev.encode()))
+
+  // Go json/v2 は重複キーをデフォルト拒否するようになった。almide は?
+  match json.parse("{\"a\": 1, \"a\": 2}") {
+    ok(v) => println("duplicate keys accepted: ${json.stringify(v)}"),
+    err(e) => println("duplicate keys rejected: ${e}"),
+  }
+
+  // decode の厳格さ: フィールドが欠けた JSON はコンパイル済みの型に合わずエラー
+  match json.parse("{\"name\": \"x\"}") {
+    ok(v) => match Event.decode(v) {
+      ok(e) => println("decoded: ${e.name}"),
+      err(msg) => println("decode rejected: ${msg}"),
+    },
+    err(msg) => println("parse error: ${msg}"),
+  }
+}

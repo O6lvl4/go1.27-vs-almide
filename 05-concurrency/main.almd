@@ -1,0 +1,25 @@
+// Go 1.27 の goroutineleak プロファイルに相当するもの……は、ない。
+//
+// almide の並行性は fan ブロックだけ。スコープを抜ける時点で
+// 全タスクは完了済みか(どれかが err なら)キャンセル済み。
+// 「野良タスク」が構造上作れないので、リーク検出器が要らない。
+// Go: リークを観測するツールを足す / almide: リークを型と構文で封じる
+
+import env
+
+effect fn work(name: String, ms: Int) -> Result[String, String] = {
+  env.sleep_ms(ms)
+  ok("${name} done (${int.to_string(ms)}ms)")
+}
+
+effect fn main() -> Unit = {
+  // ネイティブでは実 OS スレッドで並行実行、結果はタプルで揃って返る
+  let (a, b, c) = fan {
+    work("A", 30)
+    work("B", 10)
+    work("C", 20)
+  }
+  println(a)
+  println(b)
+  println(c)
+}
