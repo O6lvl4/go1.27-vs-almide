@@ -1,22 +1,29 @@
-// 意地悪2b: 遅い方をリスト先頭に置く。「first to complete wins」なら 10ms で返るはず。
-// 「thunk[0] の結果を待つ」実装なら 2 秒かかる。
-import env
-
-effect fn fast() -> Result[String, String] = {
-  env.sleep_ms(10)
-  ok("fast won")
+// 意地悪2b: 遅い方をリスト先頭に置く。「first to complete wins」なら速い方が勝つはず。
+// 「thunk[0] の結果を待つ」実装なら遅い方が勝つ。
+//
+// fan.race は fan.min(clock) に改名された (epoch 14, ADR-0028)。実時間の先着
+// (fan.min(duration.ms(n)) { … }) は #3788 で入る予定で、今は型エラー。今書けるのは
+// compute 時計 = 決定論的な計算量で最小の腕を選ぶ形で、腕は pure でなければならない
+// (sleep できない)。なので遅い/速いを sleep ではなく計算量で作る。
+fn heavy(n: Int) -> Int = {
+  var i = 0
+  var acc = 0
+  while i < n {
+    acc = (acc + i * 7) % 999983
+    i = i + 1
+  }
+  acc
 }
 
-effect fn slow() -> Result[String, String] = {
-  env.sleep_ms(2000)
-  ok("slow won")
-}
+fn fast() -> String = if heavy(10000) >= 0 then "fast won" else "unreachable"
+
+fn slow() -> String = if heavy(2000000) >= 0 then "slow won" else "unreachable"
 
 effect fn main() -> Unit = {
-  let winner = fan.race([
-    () => slow(),
-    () => fast()
-  ])
+  let winner = fan.min(compute.s(1)) {
+    slow()
+    fast()
+  }
   match winner {
     ok(w) => println("winner: ${w}"),
     err(e) => println("race err: ${e}"),

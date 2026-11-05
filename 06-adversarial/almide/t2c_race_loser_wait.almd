@@ -1,23 +1,32 @@
-// 意地悪2c: race の勝者確定後、main が 3 秒生き延びたら敗者(2秒スリープ)は蘇るのか。
-// 蘇って println したら、敗者は「キャンセル」ではなく「放置」= 野良タスク。
+// 意地悪2c: race の勝者確定後、main が 3 秒生き延びたら敗者は蘇るのか。
+// 蘇ったら、敗者は「キャンセル」ではなく「放置」= 野良タスク。
+//
+// fan.race は fan.min(clock) に改名された (epoch 14, ADR-0028)。実時間の先着
+// (fan.min(duration.ms(n)) { … }) は #3788 で入る予定で、今は型エラー。compute 時計の
+// fan.min は腕を source 順に予算つきで走らせ、腕は pure (sleep も println もできない)。
+// 敗者は予算超過で打ち切られるので、勝者確定後に蘇る余地がない — それを 3 秒待って確かめる。
 import env
 
-effect fn fast() -> Result[String, String] = {
-  env.sleep_ms(10)
-  ok("fast won")
+fn heavy(n: Int) -> Int = {
+  var i = 0
+  var acc = 0
+  while i < n {
+    acc = (acc + i * 7) % 999983
+    i = i + 1
+  }
+  acc
 }
 
-effect fn slow_noisy() -> Result[String, String] = {
-  env.sleep_ms(2000)
-  println("LOSER STILL RUNNING AFTER RACE")
-  ok("slow")
-}
+fn fast() -> String = if heavy(10000) >= 0 then "fast won" else "unreachable"
+
+// 予算 (compute.ms(5)) を大きく超える敗者
+fn slow_noisy() -> String = if heavy(100000000) >= 0 then "slow" else "unreachable"
 
 effect fn main() -> Unit = {
-  let winner = fan.race([
-    () => fast(),
-    () => slow_noisy()
-  ])
+  let winner = fan.min(compute.ms(5)) {
+    fast()
+    slow_noisy()
+  }
   match winner {
     ok(w) => println("winner: ${w}"),
     err(e) => println("race err: ${e}"),

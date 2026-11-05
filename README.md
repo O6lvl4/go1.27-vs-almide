@@ -183,8 +183,8 @@ effect fn uuid_v4() -> String = {
     bs.push(random.int(0, 255))
   }
   // version 4 (上位ニブルを 0100 に)、variant 10xx
-  let b6 = int.bor(int.band(list.get_or(bs, 6, 0), 15), 64)
-  let b8 = int.bor(int.band(list.get_or(bs, 8, 0), 63), 128)
+  let b6 = int.bor(int.band(list.get(bs, 6) ?? 0, 15), 64)
+  let b8 = int.bor(int.band(list.get(bs, 8) ?? 0, 63), 128)
   let fixed = list.set(list.set(bs, 6, b6), 8, b8)
   let hx = list.join(list.map(fixed, (b) => to_hex2(b)), "")
   string.slice(hx, 0, 8) + "-" + string.slice(hx, 8, 12) + "-" +
